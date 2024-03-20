@@ -122,7 +122,7 @@ func (r *finalizedProxyImpl) ProxyRequest(c *gin.Context) (err error) {
 	rpcRequest = rewriteConfirmableRequest(rpcRequest)
 
 	if client.RPCMethod(rpcRequest.Method) == client.MaxPriorityMethod {
-		result := big.NewInt(params.GWei)
+		result := big.NewInt(params.GWei * 1.5)
 
 		res := (*hexutil.Big)(result)
 
