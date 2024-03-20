@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/gin-gonic/gin"
 	"github.com/synapsecns/sanguine/core/ginhelper"
@@ -122,7 +123,10 @@ func (r *finalizedProxyImpl) ProxyRequest(c *gin.Context) (err error) {
 
 	if client.RPCMethod(rpcRequest.Method) == client.MaxPriorityMethod {
 		result := big.NewInt(params.GWei)
-		out, err := json.Marshal(result)
+
+		res := (*hexutil.Big)(result)
+
+		out, err := json.Marshal(res)
 		if err != nil {
 			return fmt.Errorf("could not marshal result: %w", err)
 		}
