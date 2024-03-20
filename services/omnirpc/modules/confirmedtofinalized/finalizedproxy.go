@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/gin-gonic/gin"
 	"github.com/synapsecns/sanguine/core/ginhelper"
 	"github.com/synapsecns/sanguine/core/metrics"
@@ -14,9 +15,11 @@ import (
 	"github.com/synapsecns/sanguine/ethergo/parser/rpc"
 	"github.com/synapsecns/sanguine/services/omnirpc/collection"
 	omniHTTP "github.com/synapsecns/sanguine/services/omnirpc/http"
+	"github.com/synapsecns/sanguine/services/omnirpc/proxy"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"io"
+	"math/big"
 	"net/http"
 )
 
@@ -116,6 +119,26 @@ func (r *finalizedProxyImpl) ProxyRequest(c *gin.Context) (err error) {
 	span.SetAttributes(attribute.String("original-body", string(rawBody)))
 
 	rpcRequest = rewriteConfirmableRequest(rpcRequest)
+
+	if client.RPCMethod(rpcRequest.Method) == client.MaxPriorityMethod {
+		result := big.NewInt(params.GWei)
+		out, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("could not marshal result: %w", err)
+		}
+
+		message := proxy.JSONRPCMessage{
+			Version: "2.0",
+			ID:      rpcRequest.ID,
+			Result:  out,
+		}
+		marshalledMessage, err := json.Marshal(message)
+		if err != nil {
+			return fmt.Errorf("could not marshal message: %w", err)
+		}
+		c.Data(http.StatusOK, gin.MIMEJSON, marshalledMessage)
+		return nil
+	}
 
 	body, err := json.Marshal(rpcRequest)
 	if err != nil {
