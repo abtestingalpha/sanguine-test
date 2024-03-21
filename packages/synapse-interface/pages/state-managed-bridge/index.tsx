@@ -411,17 +411,25 @@ const StateManagedBridge = () => {
       /** Setting custom gas limit for only Polygon transactions */
       let gasEstimate = undefined
 
-      if (fromChainId === polygon.id) {
-        const publicClient = getPublicClient()
-        gasEstimate = await publicClient.estimateGas({
-          value: payload.value,
-          to: payload.to,
-          account: address,
-          data: payload.data,
-          chainId: fromChainId,
-        })
-        gasEstimate = (gasEstimate * 3n) / 2n
-      }
+      // if (fromChainId === polygon.id) {
+      const publicClient = getPublicClient()
+      gasEstimate = await publicClient.estimateGas({
+        value: payload.value,
+        to: payload.to,
+        account: address,
+        data: payload.data,
+        chainId: fromChainId,
+      })
+
+      const gasPrice = await publicClient.getGasPrice()
+
+      console.log('gasEstimate:', gasEstimate)
+      console.log('gasPrice:', gasPrice)
+
+      // gasEstimate = (gasEstimate * 3n) / 2n
+      // }
+
+      // console.log('gasEstimate:', gasEstimate)
 
       const tx = await wallet.sendTransaction({
         ...payload,

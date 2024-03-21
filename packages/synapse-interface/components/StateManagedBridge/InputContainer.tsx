@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useDispatch } from 'react-redux'
 import { useAccount, useNetwork } from 'wagmi'
-
+import { getPublicClient } from '@wagmi/core'
+import { zeroAddress } from 'viem'
 import { initialState, updateFromValue } from '@/slices/bridge/reducer'
 import MiniMaxButton from '../buttons/MiniMaxButton'
 import { formatBigIntToString } from '@/utils/bigint/format'
@@ -15,11 +16,26 @@ import { FromChainSelector } from './FromChainSelector'
 import { FromTokenSelector } from './FromTokenSelector'
 import { useBridgeState } from '@/slices/bridge/hooks'
 import { usePortfolioState } from '@/slices/portfolio/hooks'
+import { useSynapseContext } from '@/utils/providers/SynapseProvider'
+import { isAddress } from 'viem'
+import { stringToBigInt } from '@/utils/bigint/format'
+import { Token } from '@/utils/types'
+import { EMPTY_BRIDGE_QUOTE, EMPTY_BRIDGE_QUOTE_ZERO } from '@/constants/bridge'
 
 export const inputRef = React.createRef<HTMLInputElement>()
 
 export const InputContainer = () => {
-  const { fromChainId, fromToken, fromValue } = useBridgeState()
+  const { synapseSDK } = useSynapseContext()
+  const { address } = useAccount()
+  const {
+    fromChainId,
+    fromToken,
+    fromValue,
+    bridgeQuote,
+    destinationAddress,
+    toChainId,
+    debouncedFromValue,
+  } = useBridgeState()
   const [showValue, setShowValue] = useState('')
 
   const [hasMounted, setHasMounted] = useState(false)
@@ -72,7 +88,59 @@ export const InputContainer = () => {
     }
   }
 
-  const onMaxBalance = useCallback(() => {
+  const onMaxBalance = useCallback(async () => {
+    // Check if bridge token is native gas token
+    console.log('hit')
+    if (
+      bridgeQuote !== EMPTY_BRIDGE_QUOTE_ZERO &&
+      fromToken.addresses[fromChainId] === zeroAddress
+    ) {
+      const publicClient = getPublicClient()
+
+      const toAddress =
+        destinationAddress && isAddress(destinationAddress)
+          ? destinationAddress
+          : address
+
+      const data = await synapseSDK.bridge(
+        toAddress,
+        bridgeQuote.routerAddress,
+        fromChainId,
+        toChainId,
+        fromToken?.addresses[fromChainId as keyof Token['addresses']],
+        stringToBigInt(debouncedFromValue, fromToken?.decimals[fromChainId]),
+        bridgeQuote.originQuery,
+        bridgeQuote.destQuery
+      )
+
+      const payload =
+        fromToken?.addresses[fromChainId as keyof Token['addresses']] ===
+          zeroAddress ||
+        fromToken?.addresses[fromChainId as keyof Token['addresses']] === ''
+          ? {
+              data: data.data,
+              to: data.to,
+              value: stringToBigInt(
+                debouncedFromValue,
+                fromToken?.decimals[fromChainId]
+              ),
+            }
+          : data
+
+      const gasEstimate = await publicClient.estimateGas({
+        value: payload.value,
+        to: payload.to,
+        account: address,
+        data: payload.data,
+        chainId: fromChainId,
+      })
+
+      const gasPrice = await publicClient.getGasPrice()
+
+      console.log('gasEstimate:', gasEstimate)
+      console.log('gasPrice:', gasPrice)
+    }
+
     dispatch(
       updateFromValue(
         formatBigIntToString(balance, fromToken?.decimals[fromChainId])
@@ -155,7 +223,7 @@ export const InputContainer = () => {
           </div>
           <div>
             {hasMounted && isConnected && (
-              <div className="m">
+              <div>
                 <MiniMaxButton
                   disabled={!balance || balance === 0n ? true : false}
                   onClickBalance={onMaxBalance}
