@@ -6,7 +6,6 @@ import {InterchainTxDescriptor} from "../../contracts/libs/InterchainTransaction
 
 import {IInterchainAppV1Harness} from "../interfaces/IInterchainAppV1Harness.sol";
 
-// solhint-disable func-name-mixedcase
 contract ICAppV1Harness is ICAppV1, IInterchainAppV1Harness {
     constructor(address admin) ICAppV1(admin) {}
 
@@ -51,25 +50,25 @@ contract ICAppV1Harness is ICAppV1, IInterchainAppV1Harness {
     function exposed__getInterchainFee(
         uint256 dstChainId,
         bytes memory options,
-        uint256 messageLen
+        bytes memory message
     )
         external
         view
         returns (uint256)
     {
-        return _getInterchainFee(dstChainId, options, messageLen);
+        return _getInterchainFee(dstChainId, options, message);
     }
 
     function exposed__getMessageFee(
         uint256 dstChainId,
         OptionsV1 memory options,
-        uint256 messageLen
+        bytes memory message
     )
         external
         view
         returns (uint256)
     {
-        return _getMessageFee(dstChainId, options, messageLen);
+        return _getMessageFee(dstChainId, options, message);
     }
 
     /// @dev Internal logic for receiving messages. At this point the validity of the message is already checked.

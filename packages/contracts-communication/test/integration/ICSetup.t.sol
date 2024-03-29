@@ -2,21 +2,21 @@
 pragma solidity 0.8.20;
 
 import {ExecutionFees} from "../../contracts/ExecutionFees.sol";
+import {ExecutionService} from "../../contracts/ExecutionService.sol";
 import {InterchainClientV1} from "../../contracts/InterchainClientV1.sol";
 import {InterchainDB} from "../../contracts/InterchainDB.sol";
 import {PingPongApp} from "../../contracts/apps/examples/PingPongApp.sol";
-import {SynapseExecutionServiceV1} from "../../contracts/execution/SynapseExecutionServiceV1.sol";
 import {AppConfigV1} from "../../contracts/libs/AppConfig.sol";
 import {SynapseModule} from "../../contracts/modules/SynapseModule.sol";
 import {SynapseGasOracleV1, ISynapseGasOracleV1} from "../../contracts/oracles/SynapseGasOracleV1.sol";
 
 import {TypeCasts} from "../../contracts/libs/TypeCasts.sol";
 
-import {ProxyTest} from "../proxy/ProxyTest.t.sol";
+import {Test} from "forge-std/Test.sol";
 
 // solhint-disable custom-errors
 // solhint-disable ordering
-abstract contract ICSetup is ProxyTest {
+abstract contract ICSetup is Test {
     using TypeCasts for address;
 
     uint256 public constant SRC_CHAIN_ID = 1337;
@@ -32,8 +32,7 @@ abstract contract ICSetup is ProxyTest {
     uint256 public constant INITIAL_TS = 1_704_067_200; // 2024-01-01 00:00:00 UTC
 
     ExecutionFees public executionFees;
-    address public executionServiceImpl;
-    SynapseExecutionServiceV1 public executionService;
+    ExecutionService public executionService;
     InterchainClientV1 public icClient;
     InterchainDB public icDB;
 
@@ -61,8 +60,7 @@ abstract contract ICSetup is ProxyTest {
 
     function deployInterchainContracts() internal virtual {
         executionFees = new ExecutionFees(address(this));
-        executionServiceImpl = address(new SynapseExecutionServiceV1());
-        executionService = SynapseExecutionServiceV1(deployProxy(executionServiceImpl));
+        executionService = new ExecutionService(address(this));
         icDB = new InterchainDB();
         icClient = new InterchainClientV1({interchainDB: address(icDB), owner_: address(this)});
         module = new SynapseModule({interchainDB: address(icDB), owner_: address(this)});
@@ -85,11 +83,9 @@ abstract contract ICSetup is ProxyTest {
     }
 
     function configureExecutionService() internal virtual {
-        executionService.initialize(address(this));
-        executionService.grantRole(executionService.GOVERNOR_ROLE(), address(this));
         executionService.setExecutorEOA(executor);
         executionService.setGasOracle(address(gasOracle));
-        executionService.grantRole(executionService.IC_CLIENT_ROLE(), address(icClient));
+        executionService.setInterchainClient(address(icClient));
     }
 
     function configureInterchainClient() internal virtual {

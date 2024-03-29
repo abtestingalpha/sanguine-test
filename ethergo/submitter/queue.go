@@ -3,10 +3,6 @@ package submitter
 import (
 	"context"
 	"fmt"
-	"math/big"
-	"sync"
-	"time"
-
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/lmittmann/w3"
 	"github.com/lmittmann/w3/module/eth"
@@ -16,6 +12,9 @@ import (
 	"github.com/synapsecns/sanguine/ethergo/submitter/db"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"math/big"
+	"sync"
+	"time"
 )
 
 // runSelector runs the selector start loop.
@@ -61,36 +60,24 @@ func (t *txSubmitterImpl) processQueue(parentCtx context.Context) (err error) {
 		}
 	}()
 
-	pendingChainIDs, err := t.db.GetChainIDsByStatus(ctx, t.signer.Address(), db.Stored, db.Pending, db.FailedSubmit, db.Submitted)
+	// get all the pendingTxes in the queue
+	pendingTxes, err := t.db.GetTXS(ctx, t.signer.Address(), nil, db.Stored, db.Pending, db.FailedSubmit, db.Submitted)
 	if err != nil {
-		return fmt.Errorf("could not get pendingChainIDs: %w", err)
+		return fmt.Errorf("could not get pendingTxes: %w", err)
 	}
 
-	pendingChainIDs64 := make([]int64, len(pendingChainIDs))
-	for i, chainID := range pendingChainIDs {
-		pendingChainIDs64[i] = chainID.Int64()
-	}
-	span.SetAttributes(attribute.Int64Slice("pending_chain_ids", pendingChainIDs64))
+	// fetch txes into a map by chainid.
+	sortedTXsByChainID := sortTxesByChainID(pendingTxes)
 
-	wg.Add(len(pendingChainIDs))
+	wg.Add(len(sortedTXsByChainID))
 
-	for _, chainID := range pendingChainIDs {
-		go func(chainID *big.Int) {
+	for chainID := range sortedTXsByChainID {
+		go func(chainID uint64) {
 			defer wg.Done()
-
-			// get all the pendingTxes in the queue
-			pendingTxes, err := t.db.GetTXS(ctx, t.signer.Address(), chainID, db.Stored, db.Pending, db.FailedSubmit, db.Submitted)
-			if err != nil {
-				span.AddEvent("could not get pendingTxes", trace.WithAttributes(
-					attribute.String("error", err.Error()), attribute.Int64("chainID", chainID.Int64()),
-				))
-				return
-			}
-
-			err = t.chainPendingQueue(ctx, chainID, pendingTxes)
+			err := t.chainPendingQueue(ctx, new(big.Int).SetUint64(chainID), sortedTXsByChainID[chainID])
 			if err != nil {
 				span.AddEvent("chainPendingQueue error", trace.WithAttributes(
-					attribute.String("error", err.Error()), attribute.Int64("chainID", chainID.Int64())))
+					attribute.String("error", err.Error()), attribute.Int64("chainID", int64(chainID))))
 			}
 		}(chainID)
 	}

@@ -9,7 +9,6 @@ import {TypeCasts} from "../../contracts/libs/TypeCasts.sol";
 import {stdJson, SynapseScript} from "@synapsecns/solidity-devops/src/SynapseScript.sol";
 
 // solhint-disable code-complexity
-// solhint-disable custom-errors
 abstract contract ConfigureAppV1 is SynapseScript {
     using stdJson for string;
 
@@ -115,8 +114,7 @@ abstract contract ConfigureAppV1 is SynapseScript {
 
     function setExecutionService() internal virtual {
         printLog("Setting execution service");
-        address executionService =
-            getDeploymentAddress({contractName: "SynapseExecutionServiceV1", revertIfNotFound: true});
+        address executionService = getDeploymentAddress({contractName: "ExecutionService", revertIfNotFound: true});
         if (app.getExecutionService() != executionService) {
             app.setExecutionService(executionService);
             printSuccessWithIndent(string.concat("Execution service set to ", vm.toString(executionService)));
@@ -176,7 +174,6 @@ abstract contract ConfigureAppV1 is SynapseScript {
         }
     }
 
-    // solhint-disable-next-line no-empty-blocks
     function afterAppConfigured() internal virtual {}
 
     function contains(address[] memory array, address value) internal pure returns (bool) {

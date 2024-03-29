@@ -160,7 +160,7 @@ contract InterchainClientV1 is Ownable, InterchainClientV1Events, IInterchainCli
         address srcExecutionService,
         address[] calldata srcModules,
         bytes calldata options,
-        uint256 messageLen
+        bytes calldata message
     )
         external
         view
@@ -173,8 +173,18 @@ contract InterchainClientV1 is Ownable, InterchainClientV1Events, IInterchainCli
         fee = IInterchainDB(INTERCHAIN_DB).getInterchainFee(dstChainId, srcModules);
         // Add execution fee, if ExecutionService is provided
         if (srcExecutionService != address(0)) {
-            uint256 payloadSize = InterchainTransactionLib.payloadSize(options.length, messageLen);
-            fee += IExecutionService(srcExecutionService).getExecutionFee(dstChainId, payloadSize, options);
+            // Construct a mock InterchainTransaction to calculate the execution fee.
+            // We don't care about values for static fields, as we are only interested in the payload size.
+            InterchainTransaction memory icTx = InterchainTransactionLib.constructLocalTransaction({
+                srcSender: address(0),
+                dstReceiver: 0,
+                dstChainId: dstChainId,
+                dbNonce: 0,
+                entryIndex: 0,
+                options: options,
+                message: message
+            });
+            fee += IExecutionService(srcExecutionService).getExecutionFee(dstChainId, abi.encode(icTx).length, options);
         }
     }
 
@@ -260,7 +270,8 @@ contract InterchainClientV1 is Ownable, InterchainClientV1Events, IInterchainCli
         if (srcExecutionService != address(0)) {
             IExecutionService(srcExecutionService).requestExecution({
                 dstChainId: dstChainId,
-                txPayloadSize: InterchainTransactionLib.payloadSize(options.length, message.length),
+                // TODO: there should be a way to calculate the payload size without encoding the transaction
+                txPayloadSize: icTx.encodeTransaction().length,
                 transactionId: desc.transactionId,
                 executionFee: executionFee,
                 options: options
@@ -351,7 +362,7 @@ contract InterchainClientV1 is Ownable, InterchainClientV1Events, IInterchainCli
     {
         for (uint256 i = 0; i < approvedModules.length; ++i) {
             uint256 confirmedAt = IInterchainDB(INTERCHAIN_DB).checkVerification(approvedModules[i], icEntry, proof);
-            // checkVerification() returns 0 if entry hasn't been confirmed by the module, so we check for that as well
+            // readEntry() returns 0 if entry hasn't been confirmed by the module, so we check for that as well
             if (confirmedAt != 0 && confirmedAt + optimisticPeriod < block.timestamp) {
                 ++finalizedResponses;
             }
