@@ -7,7 +7,7 @@ ponder.on(
   'InterchainClientV1:InterchainTransactionSent',
   async ({ event, context }) => {
     const {
-      db: { InterchainTransactionSent, InterchainTransaction },
+      db: { InterchainTransactionSent, InterchainTransaction, InterchainBatch },
       network: { chainId },
     } = context
 
@@ -55,25 +55,32 @@ ponder.on(
       },
     })
 
-    await InterchainTransaction.upsert({
-      id: transactionId,
-      update: {
-        sentAt: timestamp,
-        updatedAt: BigInt(Math.trunc(Date.now() / 1000)),
-        interchainTransactionSentId: record.id,
-      },
-      create: {
-        sentAt: timestamp,
-        createdAt: BigInt(Math.trunc(Date.now() / 1000)),
-        interchainTransactionSentId: record.id,
+    const batch = await InterchainBatch.findMany({
+      where: {
+        srcDbNonce: dbNonce,
+        dstChainId,
       },
     })
 
-    console.log('==========')
-    console.log(`on: ${context.network.name}`)
-    console.log(`InterchainClientV1:InterchainTransactionSent`)
-    console.log(`event.args`, event.args)
-    console.log('==========')
+    batch.items.forEach(async (b) => {
+      await InterchainTransaction.upsert({
+        id: transactionId,
+        update: {
+          sentAt: timestamp,
+          updatedAt: BigInt(Math.trunc(Date.now() / 1000)),
+          interchainTransactionSentId: record.id,
+          interchainBatchId: b.id,
+          status: 'Sent',
+        },
+        create: {
+          sentAt: timestamp,
+          createdAt: BigInt(Math.trunc(Date.now() / 1000)),
+          interchainTransactionSentId: record.id,
+          interchainBatchId: b.id,
+          status: 'Sent',
+        },
+      })
+    })
   }
 )
 
@@ -81,11 +88,7 @@ ponder.on(
   'InterchainClientV1:InterchainTransactionReceived',
   async ({ event, context }) => {
     const {
-      db: {
-        InterchainTransactionSent,
-        InterchainTransactionReceived,
-        InterchainTransaction,
-      },
+      db: { InterchainTransactionReceived, InterchainTransaction },
       network: { chainId },
     } = context
 
@@ -131,56 +134,54 @@ ponder.on(
         receivedAt: timestamp,
         createdAt: BigInt(Math.trunc(Date.now() / 1000)),
         interchainTransactionReceivedId: record.id,
-        status: 'Complete',
+        status: 'Received',
       },
       update: {
         receivedAt: timestamp,
         updatedAt: BigInt(Math.trunc(Date.now() / 1000)),
         interchainTransactionReceivedId: record.id,
-        status: 'Complete',
+        status: 'Received',
       },
     })
-
-    console.log('==========')
-    console.log(`on: ${context.network.name}`)
-    console.log(`InterchainClientV1:InterchainTransactionReceived`)
-    console.log(`event.args`, event.args)
-    console.log('==========')
   }
 )
 
-ponder.on('InterchainDB:InterchainEntryWritten', async ({ event, context }) => {
-  const {
-    db: { InterchainTransactionSent, InterchainTransactionReceived },
-  } = context
+ponder.on(
+  'InterchainDB:InterchainBatchFinalized',
+  async ({ event, context }) => {
+    const {
+      db: { InterchainBatch },
+    } = context
 
-  console.log('==========')
-  console.log(`on: ${context.network.name}`)
-  console.log('InterchainDB:InterchainEntryWritten')
-  console.log(`event.args`, event.args)
-  console.log('==========')
-})
+    const { batchRoot, dbNonce } = event.args
+
+    await InterchainBatch.create({
+      id: batchRoot,
+      data: {
+        batchRoot,
+        srcDbNonce: dbNonce,
+        status: 'InterchainBatchFinalized',
+      },
+    })
+  }
+)
 
 ponder.on(
   'InterchainDB:InterchainBatchVerificationRequested',
   async ({ event, context }) => {
     const {
-      db: { InterchainTransactionSent, InterchainTransactionReceived },
+      db: { InterchainBatch },
     } = context
 
-    const entrySent = await InterchainTransactionSent.findMany({
-      where: { dbNonce: event.args.dbNonce },
-    })
+    const { batchRoot, dbNonce, dstChainId } = event.args
 
-    const entryReceived = await InterchainTransactionReceived.findMany({
-      where: { dbNonce: event.args.dbNonce },
+    await InterchainBatch.update({
+      id: batchRoot,
+      data: {
+        dstChainId,
+        status: 'InterchainBatchVerificationRequested',
+      },
     })
-
-    console.log('==========')
-    console.log(`on: ${context.network.name}`)
-    console.log('InterchainDB:InterchainBatchVerificationRequested')
-    console.log(`event.args`, event.args)
-    console.log('==========')
   }
 )
 
@@ -188,49 +189,18 @@ ponder.on(
   'InterchainDB:InterchainBatchVerified',
   async ({ event, context }) => {
     const {
-      db: { InterchainTransactionSent, InterchainTransaction },
+      db: { InterchainBatch },
     } = context
 
-    const entry = await InterchainTransactionSent.findMany({
-      where: {
-        dbNonce: event.args.dbNonce,
-        chainId: Number(event.args.srcChainId),
+    const { srcChainId, dbNonce, batchRoot } = event.args
+
+    await InterchainBatch.update({
+      id: batchRoot,
+      data: {
+        srcChainId,
+        dstDbNonce: dbNonce,
+        status: 'InterchainBatchVerified',
       },
-    })
-
-    console.log('==========')
-    console.log(`on: ${context.network.name}`)
-    console.log('InterchainDB:InterchainBatchVerified')
-    console.log(`event.args`, event.args)
-    console.log(`entry.items`, entry.items)
-    console.log('==========')
-
-    entry.items.forEach(async (item) => {
-      await InterchainTransaction.update({
-        id: item.id,
-        data: {
-          status: 'InterchainDB:InterchainBatchVerified',
-        },
-      })
     })
   }
 )
-
-// ponder.on(
-//   'SynapseModule:BatchVerificationRequested',
-//   async ({ event, context }) => {
-//     console.log('==========')
-//     console.log(`on: ${context.network.name}`)
-//     console.log('SynapseModule:BatchVerificationRequested')
-//     // console.log(`event.args`, event.args)
-//     console.log('==========')
-//   }
-// )
-
-// ponder.on('SynapseModule:BatchVerified', async ({ event, context }) => {
-//   console.log('==========')
-//   console.log(`on: ${context.network.name}`)
-//   console.log('SynapseModule:BatchVerified')
-//   // console.log(`event.args`, event.args)
-//   console.log('==========')
-// })
